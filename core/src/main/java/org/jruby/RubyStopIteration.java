@@ -32,6 +32,7 @@ import org.jruby.exceptions.RaiseException;
 import org.jruby.exceptions.StopIteration;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ThreadContext;
+import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
 /**
@@ -46,7 +47,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 public class RubyStopIteration extends RubyIndexError {
 
     static RubyClass define(Ruby runtime, RubyClass superClass) {
-        RubyClass StopIteration = runtime.defineClass("StopIteration", superClass, (runtime1, klass) -> new RubyStopIteration(runtime1, klass));
+        RubyClass StopIteration = runtime.defineClass("StopIteration", superClass, RubyStopIteration::new);
         StopIteration.defineAnnotatedMethods(RubyStopIteration.class);
         return StopIteration;
     }
@@ -75,6 +76,11 @@ public class RubyStopIteration extends RubyIndexError {
     @JRubyMethod
     public IRubyObject result() {
         return result == null ? getRuntime().getNil() : result;
+    }
+
+    @JRubyMethod(name = "__set_result__", visibility = Visibility.PRIVATE)
+    public IRubyObject __set_result__(IRubyObject result) {
+        return this.result = result;
     }
 
     public void setResult(IRubyObject result) {

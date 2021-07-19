@@ -2,6 +2,7 @@ require 'test/unit'
 require 'test/jruby/test_helper'
 
 require 'fileutils'
+require 'tmpdir'
 
 class TestCommandLineSwitches < Test::Unit::TestCase
   include TestHelper
@@ -17,7 +18,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   def test_dash_little_c_checks_syntax
     with_jruby_shell_spawning do
       with_temp_script("bad : code") do |s|
-        assert_match /SyntaxError/, jruby("-c #{s.path} 2>&1")
+        assert_match(/SyntaxError/, jruby("-c #{s.path} 2>&1"))
         assert_not_equal 0, $?.exitstatus
       end
     end
@@ -26,7 +27,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   def test_dash_little_c_checks_syntax_only
     with_jruby_shell_spawning do
       with_temp_script(%q{ puts "a" }) do |s|
-        assert_match /Syntax OK/, jruby(" -c #{s.path} 2>&1").chomp
+        assert_match(/Syntax OK/, jruby(" -c #{s.path} 2>&1").chomp)
         assert_equal 0, $?.exitstatus
       end
     end
@@ -87,7 +88,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   # This test is difficult to indicate meaning with. I am calling
   # jgem, as it should not exist outside the jruby.bin directory.
   def test_dash_big_S_executes_script_in_jruby_bin_dir
-    assert_match /^\d+\.\d+\.\d+/, `#{RUBY} -S jgem --version`
+    assert_match(/^\d+\.\d+\.\d+/, `#{RUBY} -S jgem --version`)
     assert_equal 0, $?.exitstatus
   end
 
@@ -120,13 +121,13 @@ class TestCommandLineSwitches < Test::Unit::TestCase
     assert_equal 0, $?.exitstatus, "failed execution with output:\n#{lines}"
     parent_dir = Dir.chdir('..') { Dir.pwd }
 
-    assert_match /jruby \d+(\.\d+\.\d+)?/, lines[0]
-    assert_match /true$/, lines[1]
+    assert_match(/jruby \d+(\.\d+\.\d+)?/, lines[0])
+    assert_match(/true$/, lines[1])
     assert_equal "0", lines[2]
     assert_equal "true", lines[3]
     assert_equal "UTF-8", lines[4]
     assert_equal "1;2;3", lines[5].rstrip
-    assert_match /^hello/, lines[6]
+    assert_match(/^hello/, lines[6])
     # The gsub is for windows
     assert_equal "#{parent_dir}", lines[7].gsub('\\', '/')
     assert_equal "bar", lines[8]
@@ -153,12 +154,12 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   def test_dash_big_C_error
     out = jruby('-CaeAEUAOEUAeu_NOT_EXIST_xxx -e "puts Dir.pwd" 2>&1').rstrip
     assert_equal 1, $?.exitstatus
-    assert_match /chdir.*fatal/, out
+    assert_match(/chdir.*fatal/, out)
   end
 
   def test_dash_little_w_turns_warnings_on
     with_jruby_shell_spawning do
-      assert_match /warning/, `#{RUBY} -v -e "defined? true" 2>&1`
+      assert_match(/warning/, `#{RUBY} -v -e "defined? true" 2>&1`)
       assert_equal 0, $?.exitstatus
     end
   end
@@ -168,7 +169,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
       with_temp_script("defined? true") do |s|
         assert_equal "", jruby("-W1 #{s.path} 2>&1")
         assert_equal 0, $?.exitstatus
-        assert_match /warning/, jruby("-W2 #{s.path} 2>&1")
+        assert_match(/warning/, jruby("-W2 #{s.path} 2>&1"))
         assert_equal 0, $?.exitstatus
       end
     end
@@ -177,13 +178,13 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   def test_dash_big_x_sets_extended_options
     # turn on ObjectSpace
     with_temp_script("ObjectSpace.each_object(Fixnum) {|o| puts o.inspect}") do |s|
-      assert_no_match /ObjectSpace is disabled/, jruby("-X+O #{s.path} 2>&1")
+      assert_no_match(/ObjectSpace is disabled/, jruby("-X+O #{s.path} 2>&1"))
       assert_equal 0, $?.exitstatus
     end
   end
 
   def test_dash_dash_copyright_displays_copyright
-     assert_match /Copyright \(C\) 2001-2.../, `#{RUBY} --copyright`
+     assert_match(/Copyright \(C\) 2001-2.../, `#{RUBY} --copyright`)
      assert_equal 0, $?.exitstatus
   end
 
@@ -192,15 +193,15 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   # TODO --jdb: cannot figure out how to test
 
   def test_dash_dash_properties_shows_list_of_properties
-    assert_match /These properties can be used/, `#{RUBY} --properties`
+    assert_match(/These properties can be used/, `#{RUBY} --properties`)
     assert_equal 0, $?.exitstatus
   end
 
   def test_dash_dash_version_shows_version
     version_string = `#{RUBY} --version`
     assert_equal 0, $?.exitstatus
-    assert_match /\(\d+\.\d+\.\d+/, version_string
-    assert_match /jruby \d+(\.\d+\.\d+)?/, version_string
+    assert_match(/\(\d+\.\d+\.\d+/, version_string)
+    assert_match(/jruby \d+(\.\d+\.\d+)?/, version_string)
   end
 
   # Only HotSpot has "client" and "server" so pointless to test others
@@ -211,7 +212,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
       result = jruby(%Q{--server -rjava \
         -e "print java.lang.management.ManagementFactory.getCompilationMXBean.name"})
       assert_equal 0, $?.exitstatus
-      assert_match /(tiered|server|j9jit24|j9jit23|(oracle|bea) jrockit\(r\) optimizing compiler)/, result.downcase
+      assert_match(/(tiered|server|j9jit24|j9jit23|(oracle|bea) jrockit\(r\) optimizing compiler)/, result.downcase)
     end
 
     # JRUBY-2648 [Note: Originally these tests had tests for default vm and
@@ -230,7 +231,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
       result = jruby(%Q{--client -rjava \
         -e "print java.lang.management.ManagementFactory.getCompilationMXBean.name"})
       assert_equal 0, $?.exitstatus
-      assert_match /client|j9jit24|j9jit23|bea jrockit\(r\) optimizing compiler/, result.downcase
+      assert_match(/client|j9jit24|j9jit23|bea jrockit\(r\) optimizing compiler/, result.downcase)
     end
   end
 
@@ -301,7 +302,7 @@ class TestCommandLineSwitches < Test::Unit::TestCase
   def test_uppercase_in_process
     version = `rUbY.ExE -v`.rstrip
     assert_equal 0, $?.exitstatus
-    assert_match /java/, version
+    assert_match(/java/, version)
   end if WINDOWS
 
   # JRUBY-4783
@@ -347,5 +348,48 @@ class TestCommandLineSwitches < Test::Unit::TestCase
     assert_equal 0, $?.exitstatus
   ensure
     ENV['RUBYOPT'] = rubyopt
+  end
+
+  # jruby/jruby#6637: symlinked `java` command interferes with JAVA_HOME determination
+  def test_symlinked_java_resolves_home
+    Dir.mktmpdir do |tmpdir|
+      tmp_java = File.join(tmpdir, "java")
+      real_home = ENV_JAVA['java.home']
+      real_java = File.join(real_home, 'bin', 'java')
+
+      FileUtils.symlink real_java, tmp_java
+
+      old_env = ENV.dup
+      ENV.delete "JAVA_HOME"
+      ENV["JAVACMD"] = tmp_java
+
+      found_home = jruby('-e "print ENV_JAVA[\'java.home\']"').chomp
+
+      assert_equal 0, $?.exitstatus
+      assert_equal real_home, found_home
+    ensure
+      ENV.replace(old_env)
+    end
+  end
+
+  # jruby/jruby#6638: JAVA_HOME with spaces broken by lack of quoting in jruby.bash
+  def test_java_home_with_spaces
+    Dir.mktmpdir do |tmpdir|
+      tmp_home = File.join(tmpdir, "this is my jdk")
+      real_home = ENV_JAVA['java.home']
+
+      FileUtils.symlink real_home, tmp_home
+
+      old_env = ENV.dup
+      ENV.delete "JAVACMD"
+      ENV["JAVA_HOME"] = tmp_home
+
+      found_home = jruby('-e "puts ENV_JAVA[\'java.home\']"').chomp
+
+      assert_equal 0, $?.exitstatus
+      assert_equal real_home, found_home
+    ensure
+      ENV.replace(old_env)
+    end
   end
 end

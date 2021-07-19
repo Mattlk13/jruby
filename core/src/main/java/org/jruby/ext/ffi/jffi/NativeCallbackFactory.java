@@ -40,7 +40,7 @@ public class NativeCallbackFactory {
             return (Pointer) callable;
         }
 
-        Object ffiHandle = callable.getMetaClass().getRealClass().getFFIHandleAccessorField().getVariableAccessorForRead().get(callable);
+        Object ffiHandle = callable.getMetaClass().getRealClass().getVariableTableManager().getFFIHandleAccessorForRead().get(callable);
         NativeCallbackPointer cbptr;
         if (ffiHandle instanceof NativeCallbackPointer && ((cbptr = (NativeCallbackPointer) ffiHandle).cbInfo == callbackInfo)) {
             return cbptr;
@@ -65,7 +65,7 @@ public class NativeCallbackFactory {
     }
 
     NativeCallbackPointer newCallback(IRubyObject callable, CachingCallSite callSite) {
-        if (callSite.retrieveCache(callable.getMetaClass(), callSite.getMethodName()).method.isUndefined()) {
+        if (callSite.retrieveCache(callable).method.isUndefined()) {
             throw runtime.newArgumentError("callback does not respond to :" + callSite.getMethodName());
         }
 
@@ -117,6 +117,7 @@ public class NativeCallbackFactory {
                 case ULONG:
                 case LONG_LONG:
                 case ULONG_LONG:
+//                case LONGDOUBLE:
                 case FLOAT:
                 case DOUBLE:
                 case POINTER:
@@ -153,6 +154,7 @@ public class NativeCallbackFactory {
                 case ULONG:
                 case LONG_LONG:
                 case ULONG_LONG:
+//                case LONGDOUBLE:
                 case FLOAT:
                 case DOUBLE:
                 case POINTER:

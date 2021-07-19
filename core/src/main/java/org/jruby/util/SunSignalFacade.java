@@ -60,6 +60,12 @@ public class SunSignalFacade implements SignalFacade {
      */
     private final Map<Signal, SignalHandler> original = new HashMap<>(4);
     private final Map<String, SignalHandler> fakeOriginal = new HashMap<>(4);
+
+    /**
+     * This is used instead of SignalHandler.SIG_IGN as {@code Signal.handle(sig, anyHandler)} seems to no
+     * longer work after {@code Signal.handle(sig, SIG_IGN)}. See https://github.com/jruby/jruby/pull/6584
+     */
+    private static final SignalHandler IGNORE = sig -> {};
     
     private final static class JRubySignalHandler implements SignalHandler {
         private final Ruby runtime;
@@ -90,7 +96,7 @@ public class SunSignalFacade implements SignalFacade {
                 if (block != null) {
                     block.callMethod(context, "call", signum);
                 } else {
-                    blockCallback.call(context, new IRubyObject[] {signum}, Block.NULL_BLOCK);
+                    blockCallback.call(context, signum, Block.NULL_BLOCK);
                 }
             } catch(RaiseException e) {
                 try {
@@ -146,7 +152,7 @@ public class SunSignalFacade implements SignalFacade {
     }
 
     public IRubyObject ignore(IRubyObject recv, IRubyObject sig) {
-        return trap(recv.getRuntime(), sig.toString(), SignalHandler.SIG_IGN);
+        return trap(recv.getRuntime(), sig.toString(), IGNORE);
     }
 
     private IRubyObject trap(final Ruby runtime, final String signalName, final SignalHandler handler) {
@@ -192,16 +198,15 @@ public class SunSignalFacade implements SignalFacade {
         if (callback == null) {
             if (oldHandler == SignalHandler.SIG_DFL) {
                 retVals[0] = runtime.newString("SYSTEM_DEFAULT");
-            } else if (oldHandler == SignalHandler.SIG_IGN) {
+            } else if (oldHandler == IGNORE) {
                 retVals[0] = runtime.newString("IGNORE");
             } else {
                 retVals[0] = runtime.newString("DEFAULT");
             }
         } else {
-            final RubyModule signalModule = runtime.getModule("Signal");
-            Block block = CallBlock.newCallClosure(signalModule, signalModule, Signature.NO_ARGUMENTS,
-                    callback, runtime.getCurrentContext());
-            retVals[0] = RubyProc.newProc(runtime, block, block.type);
+            Block block = CallBlock.newCallClosure(runtime.getCurrentContext(),
+                    runtime.getModule("Signal"), Signature.NO_ARGUMENTS, callback);
+            retVals[0] = RubyProc.newProc(runtime, block, Block.Type.PROC);
         }
 
         return RubyArray.newArrayMayCopy(runtime, retVals);

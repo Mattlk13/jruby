@@ -912,12 +912,56 @@ class TestDate < Test::Unit::TestCase
     assert_equal(-1199, dt.year)
   end
 
+  def test_marshaling_keeps_offset
+    dt = DateTime.now
+    offset = dt.offset
+    dt2 = Marshal.load(Marshal.dump(dt))
+    assert_equal(offset, dt2.offset)
+    assert_equal(dt, dt2)
+  end
+
   def test_marshaling_with_active_support_like_calculation # GH-5188
     time = ActiveSupport.time_advance(Time.now, days: 1)
     date = time.to_date
 
     dump = Marshal.dump(date)
     assert_equal(time.to_date, Marshal.load(dump))
+  end
+
+  def test_bignum_jd_fraction
+    dt = DateTime.jd Rational("106143484200006057997/43200000000000")
+    assert_equal(2015, dt.year)
+    assert_equal(1, dt.month)
+    assert_equal(2, dt.day)
+    assert_equal('#<DateTime: 2015-01-02T02:20:00+00:00 ((2457025j,8400s,12115994n),+0s,2299161j)>', dt.inspect)
+
+    dt = DateTime.jd Rational("296143484258716057997185/43200000000000001")
+    assert_equal(14056, dt.year)
+    assert_equal(9, dt.month)
+    assert_equal(21, dt.day)
+    assert_equal(05, dt.hour)
+    assert_equal(55, dt.min)
+    assert_equal(17, dt.sec)
+    # NOTE: due rounding JRuby ends up with a different fraction :
+    #assert_equal(0.4, dt.sec_fraction.to_f.round(1))
+  end
+
+  def test_exception_cause_cmp
+    begin
+      Date.new(2000, 1, 1) == nil
+      raise TypeError
+    rescue TypeError => e
+      assert_equal(nil, e.cause)
+    end
+  end
+
+  def test_exception_cause_eqq
+    begin
+      Date.new(2000, 1, 1) <=> nil
+      raise TypeError
+    rescue TypeError => e
+      assert_equal(nil, e.cause)
+    end
   end
 
   module ActiveSupport

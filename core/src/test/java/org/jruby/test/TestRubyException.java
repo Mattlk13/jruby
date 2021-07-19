@@ -53,7 +53,7 @@ public class TestRubyException extends TestCase {
 
 	public void testToJava() {
 		assertNotNull(exception.toJava(Object.class));
-		assertSame(exception, exception.toJava(Object.class));
+		assertSame(exception.toThrowable(), exception.toJava(Object.class));
 
 		Object throwable = exception.toJava(RaiseException.class);
 		assertNotNull(throwable);
@@ -68,7 +68,9 @@ public class TestRubyException extends TestCase {
 		assertSame(raise, raise.getException().toJava(Throwable.class));
 
 		assertNotNull(raise.getException().toJava(Object.class));
-		assertSame(raise.getException(), raise.getException().toJava(Object.class));
+		assertSame(raise, raise.getException().toJava(Object.class));
+
+		assertSame(raise.getException(), raise.getException().toJava(org.jruby.RubyObject.class));
 	}
 
 	public void testPrintBacktrace() {
@@ -104,9 +106,9 @@ public class TestRubyException extends TestCase {
 		String output = new String(byteArrayOutputStream.toByteArray());
 		if (output.trim().length() == 0) {
 		    return new String[0];
-	    	} else {
-		    return output.split("\n");
-        	}
+		} else {
+		    return output.split(System.lineSeparator());
+		}
 	}
 
 	private void setBackTrace(int lineCount) {

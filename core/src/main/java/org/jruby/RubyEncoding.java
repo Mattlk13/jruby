@@ -33,6 +33,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 
 import org.jcodings.Encoding;
 import org.jcodings.EncodingDB.Entry;
@@ -60,17 +61,18 @@ import static com.headius.backport9.buffer.Buffers.flipBuffer;
 
 @JRubyClass(name="Encoding")
 public class RubyEncoding extends RubyObject implements Constantizable {
-    public static final Charset UTF8 = Charset.forName("UTF-8");
-    public static final Charset UTF16 = Charset.forName("UTF-16");
-    public static final Charset ISO = Charset.forName("ISO-8859-1");
-    public static final ByteList LOCALE = ByteList.create("locale");
-    public static final ByteList EXTERNAL = ByteList.create("external");
-    public static final ByteList FILESYSTEM = ByteList.create("filesystem");
-    public static final ByteList INTERNAL = ByteList.create("internal");
+    public static final Charset UTF8 = StandardCharsets.UTF_8;
+    public static final Charset UTF16 = StandardCharsets.UTF_16;
+    public static final Charset ISO = StandardCharsets.ISO_8859_1;
+
+    public static final ByteList LOCALE = new ByteList(encodeISO("locale"), false);
+    public static final ByteList EXTERNAL = new ByteList(encodeISO("external"), false);
+    public static final ByteList FILESYSTEM = new ByteList(encodeISO("filesystem"), false);
+    public static final ByteList INTERNAL = new ByteList(encodeISO("internal"), false);
 
     public static RubyClass createEncodingClass(Ruby runtime) {
         RubyClass encodingc = runtime.defineClass("Encoding", runtime.getObject(), ObjectAllocator.NOT_ALLOCATABLE_ALLOCATOR);
-        runtime.setEncoding(encodingc);
+
         encodingc.setClassIndex(ClassIndex.ENCODING);
         encodingc.setReifiedClass(RubyEncoding.class);
         encodingc.kindOf = new RubyModule.JavaClassKindOf(RubyEncoding.class);
@@ -84,7 +86,7 @@ public class RubyEncoding extends RubyObject implements Constantizable {
     private Encoding encoding;
     private final ByteList name;
     private final boolean isDummy;
-    private final Object constant;
+    private final transient Object constant;
 
     private RubyEncoding(Ruby runtime, byte[] name, int p, int end, boolean isDummy) {
         this(runtime, new ByteList(name, p, end), null, isDummy);
@@ -190,6 +192,32 @@ public class RubyEncoding extends RubyObject implements Constantizable {
         return getBytes(getUTF8Coder().encode(str));
     }
 
+    public static byte[] encodeISO(CharSequence str) {
+        return encodeISOLoop(str);
+    }
+
+    public static byte[] encodeISO(char[] str) {
+        return encodeISOLoop(str);
+    }
+
+    private static byte[] encodeISOLoop(char[] s) {
+        int length = s.length;
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++) {
+            bytes[i] = (byte) s[i];
+        }
+        return bytes;
+    }
+
+    private static byte[] encodeISOLoop(CharSequence s) {
+        int length = s.length();
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++) {
+            bytes[i] = (byte) s.charAt(i);
+        }
+        return bytes;
+    }
+
     static ByteList doEncodeUTF8(String str) {
         if (str.length() > CHAR_THRESHOLD) {
             return getByteList(UTF8.encode(CharBuffer.wrap(str)), UTF8Encoding.INSTANCE, false);
@@ -264,11 +292,60 @@ public class RubyEncoding extends RubyObject implements Constantizable {
         return bytes;
     }
 
+    /**
+     * Decode the range of bytes specified as UTF-8 content.
+     *
+     * This will attempt to use a zero-allocation decoder if the content length is shorter than {@link #CHAR_THRESHOLD}
+     * bytes, and otherwise will used cached decoders to avoid reallocating Charset-related objects.
+     *
+     * @param bytes the byte array
+     * @param start start of content
+     * @param length length of content
+     * @return a decoded String based on UTF-8 bytes
+     */
     public static String decodeUTF8(byte[] bytes, int start, int length) {
         if (length > CHAR_THRESHOLD) {
             return UTF8.decode(ByteBuffer.wrap(bytes, start, length)).toString();
         }
         return getUTF8Coder().decode(bytes, start, length).toString();
+    }
+
+    /**
+     * Decode the range of bytes specified as "raw" binary content, as in ISO-8859-1 or ASCII-8BIT encodings.
+     *
+     * This will attempt to use a zero-allocation decoder if the content length is shorter than {@link #CHAR_THRESHOLD}
+     * bytes, and otherwise will used cached decoders to avoid reallocating Charset-related objects.
+     *
+     * @param bytes the byte array
+     * @param start start of content
+     * @param length length of content
+     * @return a decoded String based on raw bytes
+     */
+    public static String decodeRaw(byte[] bytes, int start, int length) {
+        if (length > CHAR_THRESHOLD) {
+            return new String(decodeRawLoop(bytes, start, length));
+        }
+        return getRawCoder().decode(bytes, start, length);
+    }
+
+    /**
+     * Decode the specified bytelist as "raw" binary content.
+     *
+     * This is the same as calling {@link #decodeRaw(byte[], int, int)} with the contents of byteList.
+     *
+     * @param byteList
+     * @return a decoded string based on raw bytes
+     */
+    public static String decodeRaw(ByteList byteList) {
+        return decodeRaw(byteList.unsafeBytes(), byteList.begin(), byteList.realSize());
+    }
+
+    private static char[] decodeRawLoop(byte[] s, int start, int length) {
+        char[] chars = new char[length];
+        for (int i = 0; i < length; i++) {
+            chars[i] = (char) (s[i + start] & 0xFF);
+        }
+        return chars;
     }
 
     public static String decodeUTF8(byte[] bytes) {
@@ -286,6 +363,9 @@ public class RubyEncoding extends RubyObject implements Constantizable {
     /** The maximum number of characters we can encode/decode in our cached buffers */
     private static final int CHAR_THRESHOLD = 1024;
 
+    /**
+     * A cached decoder for UTF-8 bytes.
+     */
     private static class UTF8Coder {
         private final CharsetEncoder encoder = UTF8.newEncoder();
         private final CharsetDecoder decoder = UTF8.newDecoder();
@@ -344,10 +424,32 @@ public class RubyEncoding extends RubyObject implements Constantizable {
     }
 
     /**
-     * UTF8Coder wrapped in a SoftReference to avoid possible ClassLoader leak.
+     * A cached decoder object to decode bytes as raw binary (ISO-8859-1 or ASCII-8BIT) content.
+     */
+    private static class RawCoder {
+        private final char[] charBuffer = new char[CHAR_THRESHOLD];
+
+        public final String decode(byte[] bytes, int start, int length) {
+            char[] charBuffer = this.charBuffer;
+            for (int i = 0; i < length; i++) {
+                charBuffer[i] = (char) (bytes[i + start] & 0xFF);
+            }
+
+            return new String(charBuffer, 0, length);
+        }
+    }
+
+    /**
+     * Thread-local UTF8Coder wrapped in a SoftReference to avoid possible ClassLoader leak.
      * See JRUBY-6522
      */
     private static final ThreadLocal<SoftReference<UTF8Coder>> UTF8_CODER = new ThreadLocal<>();
+
+    /**
+     * Thread-local RawCoder wrapped in a SoftReference to avoid possible ClassLoader leak.
+     * See JRUBY-6522
+     */
+    private static final ThreadLocal<SoftReference<RawCoder>> RAW_CODER = new ThreadLocal<>();
 
     private static UTF8Coder getUTF8Coder() {
         UTF8Coder coder;
@@ -355,6 +457,17 @@ public class RubyEncoding extends RubyObject implements Constantizable {
         if (ref == null || (coder = ref.get()) == null) {
             coder = new UTF8Coder();
             UTF8_CODER.set(new SoftReference<>(coder));
+        }
+
+        return coder;
+    }
+
+    private static RawCoder getRawCoder() {
+        RawCoder coder;
+        SoftReference<RawCoder> ref = RAW_CODER.get();
+        if (ref == null || (coder = ref.get()) == null) {
+            coder = new RawCoder();
+            RAW_CODER.set(new SoftReference<>(coder));
         }
 
         return coder;
@@ -397,6 +510,8 @@ public class RubyEncoding extends RubyObject implements Constantizable {
         }
 
         result.append(runtime.newString(EXTERNAL));
+        result.append(runtime.newString(FILESYSTEM));
+        result.append(runtime.newString(INTERNAL));
         result.append(runtime.newString(LOCALE));
 
         return result;
@@ -456,7 +571,7 @@ public class RubyEncoding extends RubyObject implements Constantizable {
 
     @JRubyMethod(name = "ascii_compatible?")
     public IRubyObject asciiCompatible_p(ThreadContext context) {
-        return context.runtime.newBoolean(getEncoding().isAsciiCompatible());
+        return RubyBoolean.newBoolean(context, getEncoding().isAsciiCompatible());
     }
 
     @JRubyMethod(name = {"to_s", "name"})
@@ -508,7 +623,7 @@ public class RubyEncoding extends RubyObject implements Constantizable {
 
     @JRubyMethod(name = "dummy?")
     public IRubyObject dummy_p(ThreadContext context) {
-        return context.runtime.newBoolean(isDummy);
+        return RubyBoolean.newBoolean(context, isDummy);
     }
 
     @JRubyMethod(name = "compatible?", meta = true)
@@ -546,5 +661,21 @@ public class RubyEncoding extends RubyObject implements Constantizable {
         if (context.runtime.isVerbose()) context.runtime.getWarnings().warning("setting Encoding.default_internal");
         EncodingUtils.rbEncSetDefaultInternal(context, encoding);
         return encoding;
+    }
+
+    /**
+     * @deprecated use {@link #decodeRaw(byte[], int, int)}
+     */
+    @Deprecated
+    public static String decodeISO(byte[] bytes, int start, int length) {
+        return decodeRaw(bytes, start, length);
+    }
+
+    /**
+     * @deprecated use {@link #decodeRaw(ByteList)}
+     */
+    @Deprecated
+    public static String decodeISO(ByteList byteList) {
+        return decodeRaw(byteList);
     }
 }

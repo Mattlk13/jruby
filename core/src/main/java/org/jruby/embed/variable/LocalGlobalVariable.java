@@ -114,7 +114,7 @@ public class LocalGlobalVariable extends GlobalVariable {
         final GlobalVariables globalVars = runtime.getGlobalVariables();
         // if the specified key doesn't exist, this method is called before the
         // evaluation. Don't update value in this case.
-        final String gName = ("$" + name).intern();
+        final String gName = ('$' + name);
         if ( ! globalVars.getNames().contains(gName) ) return;
 
         // the specified key is found, so let's update
@@ -150,8 +150,8 @@ public class LocalGlobalVariable extends GlobalVariable {
     @Override
     public void inject() {
         synchronized (getRuntime()) {
-            String gName = (name.startsWith("$") ? name : "$" + name);
-            getRuntime().getGlobalVariables().set( gName.intern(), irubyObject );
+            String name = this.name.startsWith("$") ? this.name : '$' + this.name;
+            getRuntime().getGlobalVariables().set(name, rubyObject);
         }
     }
 
@@ -163,8 +163,8 @@ public class LocalGlobalVariable extends GlobalVariable {
     @Override
     public void remove() {
         synchronized (getRuntime()) {
-            String gName = (name.startsWith("$") ? name : "$" + name);
-            getRuntime().getGlobalVariables().clear( gName.intern() );
+            String name = this.name.startsWith("$") ? this.name : '$' + this.name;
+            getRuntime().getGlobalVariables().clear(name);
         }
     }
 }

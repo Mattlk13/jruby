@@ -45,7 +45,6 @@ import static org.jruby.runtime.Visibility.PUBLIC;
 public final class Kernel {
 
     public static void define(final Ruby runtime) {
-        runtime.getKernel().defineAnnotatedMethods(Kernel.class);
         final RubyModule Kernel = runtime.getKernel();
         Kernel.addMethodInternal("java", new JavaPackageMethod(Kernel, "java"));
         Kernel.addMethodInternal("javax", new JavaPackageMethod(Kernel, "javax"));
@@ -55,6 +54,7 @@ public final class Kernel {
     }
 
     private static final class JavaPackageMethod extends JavaMethod.JavaMethodZero {
+        private IRubyObject pkg;
 
         JavaPackageMethod(RubyModule implClass, String name) {
             super(implClass, PUBLIC, name);
@@ -62,7 +62,11 @@ public final class Kernel {
 
         @Override
         public IRubyObject call(ThreadContext context, IRubyObject self, RubyModule clazz, String name) {
-            return get_pkg(context, name);
+            IRubyObject pkg = this.pkg;
+            if (pkg == null) {
+                this.pkg = pkg = get_pkg(context, name);
+            }
+            return pkg;
         }
     }
 

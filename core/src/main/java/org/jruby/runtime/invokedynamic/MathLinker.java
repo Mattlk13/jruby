@@ -29,6 +29,7 @@ package org.jruby.runtime.invokedynamic;
 
 import java.lang.invoke.CallSite;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.SwitchPoint;
 import java.util.List;
@@ -42,6 +43,7 @@ import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyNumeric;
+import org.jruby.ir.targets.simple.NormalInvokeSite;
 import org.jruby.runtime.CallType;
 import org.jruby.runtime.MethodIndex;
 import org.jruby.runtime.ThreadContext;
@@ -56,6 +58,8 @@ import org.jruby.util.log.LoggerFactory;
 public class MathLinker {
 
     private static final Logger LOG = LoggerFactory.getLogger(MathLinker.class);
+    public static final Lookup LOOKUP = lookup();
+
     static { // enable DEBUG output
         if (Options.INVOKEDYNAMIC_LOG_BINDING.load()) LOG.setDebugEnable(true);
     }
@@ -65,36 +69,24 @@ public class MathLinker {
             Binder
                     .from(methodType(boolean.class, IRubyObject.class))
                     .invokeStaticQuiet(lookup(), MathLinker.class, "fixnumTest");
-    public static final MethodHandle FIXNUM_OPERATOR_FAIL =
-            Binder
-                    .from(methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, RubyFixnum.class))
-                    .invokeStaticQuiet(lookup(), MathLinker.class, "fixnumOperatorFail");
-    public static final MethodHandle FIXNUM_BOOLEAN_FAIL =
-            Binder
-                    .from(methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, RubyFixnum.class))
-                    .invokeStaticQuiet(lookup(), MathLinker.class, "fixnumBooleanFail");
     public static final MethodHandle FLOAT_TEST =
             Binder
                     .from(methodType(boolean.class, IRubyObject.class))
                     .invokeStaticQuiet(lookup(), MathLinker.class, "floatTest");
-    public static final MethodHandle FLOAT_OPERATOR_FAIL =
-            Binder
-                    .from(methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, RubyFloat.class))
-                    .invokeStaticQuiet(lookup(), MathLinker.class, "floatOperatorFail");
     public static final MethodHandle FIXNUM_OPERATOR =
             Binder
                     .from(methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, long.class))
                     .invokeStaticQuiet(lookup(), MathLinker.class, "fixnumOperator");
-    public static final MethodHandle FIXNUM_BOOLEAN = Binder.from(methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, long.class)).invokeStaticQuiet(lookup(), MathLinker.class, "fixnumBoolean");
     public static final MethodHandle FLOAT_OPERATOR = Binder.from(methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class, JRubyCallSite.class, double.class)).invokeStaticQuiet(lookup(), MathLinker.class, "floatOperator");
 
     private static final CallType[] CALL_TYPES = CallType.values();
 
     private static final int[] ARG_2_TO_0 = new int[] { 2 }; // MethodHandles.permuteArguments clones the array
+    public static final MethodHandle FLOAT_TEST_ARG_2_TO_0 = permuteArguments(FLOAT_TEST, methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class), ARG_2_TO_0);
+    public static final MethodHandle FIXNUM_TEST_ARG_2_TO_0 = permuteArguments(FIXNUM_TEST, methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class), ARG_2_TO_0);
 
     public static CallSite fixnumOperatorBootstrap(Lookup lookup, String name, MethodType type, long value, int callType, String file, int line) throws NoSuchMethodException, IllegalAccessException {
-        List<String> names = StringSupport.split(name, ':');
-        String operator = JavaNameMangler.demangleMethodName(names.get(1));
+        String operator = JavaNameMangler.demangleMethodName(StringSupport.split(name, ':').get(1));
         JRubyCallSite site = new JRubyCallSite(lookup, type, CALL_TYPES[callType], file, line, operator);
 
         MethodHandle target = FIXNUM_OPERATOR;
@@ -104,21 +96,8 @@ public class MathLinker {
         return site;
     }
 
-    public static CallSite fixnumBooleanBootstrap(Lookup lookup, String name, MethodType type, long value, int callType, String file, int line) throws NoSuchMethodException, IllegalAccessException {
-        List<String> names = StringSupport.split(name, ':');
-        String operator = JavaNameMangler.demangleMethodName(names.get(1));
-        JRubyCallSite site = new JRubyCallSite(lookup, type, CALL_TYPES[callType], file, line, operator);
-
-        MethodHandle target = FIXNUM_BOOLEAN;
-        target = insertArguments(target, 3, site, value);
-
-        site.setTarget(target);
-        return site;
-    }
-
     public static CallSite floatOperatorBootstrap(Lookup lookup, String name, MethodType type, double value, int callType, String file, int line) throws NoSuchMethodException, IllegalAccessException {
-        List<String> names = StringSupport.split(name, ':');
-        String operator = JavaNameMangler.demangleMethodName(names.get(1));
+        String operator = JavaNameMangler.demangleMethodName(StringSupport.split(name, ':').get(1));
         JRubyCallSite site = new JRubyCallSite(lookup, type, CALL_TYPES[callType], file, line, operator);
 
         MethodHandle target = FLOAT_OPERATOR;
@@ -130,75 +109,53 @@ public class MathLinker {
     }
     
     public static IRubyObject fixnumOperator(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, long value) throws Throwable {
-        String operator = site.name;
-        String opMethod = MethodIndex.getFastFixnumOpsMethod(operator);
-        String name = "fixnum_" + opMethod;
-        MethodHandle target = null;
-        
-        if (operator.equals("+") || operator.equals("-")) {
-            MethodType type = methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class);
-            if (value == 1) {
-                name += "_one";
-                target = lookup().findStatic(MathLinker.class, name, type);
-            } else if (value == 2) {
-                name += "_two";
-                target = lookup().findStatic(MathLinker.class, name, type);
-            }
-        }
-        if (target == null) target = findTargetImpl(name, IRubyObject.class, value);
-
         Ruby runtime = context.runtime;
-        MethodHandle fallback = FIXNUM_OPERATOR_FAIL;
+        String operator = site.name;
 
-        fallback = insertArguments(fallback, 3, site, runtime.newFixnum(value));
+        MethodHandle target = null;
 
-        MethodHandle test = FIXNUM_TEST;
-        test = permuteArguments(test, methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class), ARG_2_TO_0);
+        // fall back on a normal call site
+        MethodType fallbackType = site.type().appendParameterTypes(IRubyObject.class);
+        CallSite normalSite = NormalInvokeSite.newSite(LOOKUP, site.name, fallbackType, false, site.file(), site.line());
 
-        if (LOG_BINDING) LOG.debug(name + "\tFixnum operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound directly");
+        MethodHandle fallback = Binder.from(site.type())
+                .append(IRubyObject.class, runtime.newFixnum(value))
+                .invoke(normalSite.dynamicInvoker());
 
-        RubyClass classFixnum = runtime.getFixnum();
         CacheEntry entry = searchWithCache(operator, caller, self.getMetaClass(), site);
-        if (entry == null || !entry.method.isBuiltin()) {
-            site.setTarget(fallback); // invalid - fallback on slow-path
+
+        if (!(self instanceof RubyFixnum) || entry == null || !entry.method.isBuiltin()) {
+            site.setTarget(target = fallback); // invalid - fallback on slow-path
+
+            if (LOG_BINDING) LOG.debug(site.name + "\tFixnum operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound to normal invocation");
         } else {
-            // confirm it's a Fixnum
-            target = guardWithTest(test, target, fallback);
+            String opMethod = MethodIndex.getFastFixnumOpsMethod(operator);
+            String name = "fixnum_" + opMethod;
+
+            if (operator.equals("+") || operator.equals("-")) {
+                MethodType type = methodType(IRubyObject.class, ThreadContext.class, IRubyObject.class, IRubyObject.class);
+                if (value == 1) {
+                    name += "_one";
+                    target = lookup().findStatic(MathLinker.class, name, type);
+                } else if (value == 2) {
+                    name += "_two";
+                    target = lookup().findStatic(MathLinker.class, name, type);
+                }
+            }
+
+            if (target == null) target = findTargetImpl(name, IRubyObject.class, value);
+
+            RubyClass classFixnum = runtime.getFixnum();
+
+            // confirm it's still a Fixnum
+            target = guardWithTest(FIXNUM_TEST_ARG_2_TO_0, target, fallback);
             target = ((SwitchPoint) classFixnum.getInvalidator().getData()).guardWithTest(target, fallback);
             site.setTarget(target);
+
+            if (LOG_BINDING) LOG.debug(name + "\tFixnum operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound directly");
         }
         
         return (IRubyObject) target.invokeWithArguments(context, caller, self);
-    }
-    
-    public static boolean fixnumBoolean(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, long value) throws Throwable {
-        String operator = site.name;
-        String opMethod = MethodIndex.getFastFixnumOpsMethod(operator);
-        String name = "fixnum_boolean_" + opMethod;
-        MethodHandle target = null;
-
-        if (target == null) target = findTargetImpl(name, boolean.class, value);
-
-        MethodHandle fallback = FIXNUM_BOOLEAN_FAIL;
-        fallback = insertArguments(fallback, 3, site, context.runtime.newFixnum(value));
-
-        MethodHandle test = FIXNUM_TEST;
-        test = permuteArguments(test, methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class), ARG_2_TO_0);
-
-        if (LOG_BINDING) LOG.debug(name + "\tFixnum boolean operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound directly");
-
-        RubyClass classFixnum = context.runtime.getFixnum();
-        CacheEntry entry = searchWithCache(operator, caller, self.getMetaClass(), site);
-        if (entry == null || !entry.method.isBuiltin()) {
-            site.setTarget(fallback); // invalid - fallback on slow-path
-        } else {
-            // confirm it's a Fixnum
-            target = guardWithTest(test, target, fallback);
-            target = ((SwitchPoint) classFixnum.getInvalidator().getData()).guardWithTest(target, fallback);
-            site.setTarget(target);
-        }
-        
-        return (Boolean) target.invokeWithArguments(context, caller, self);
     }
 
     static boolean fixnumTest(IRubyObject self) {
@@ -207,10 +164,6 @@ public class MathLinker {
 
     static IRubyObject fixnumOperatorFail(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, RubyFixnum value) throws Throwable {
         return callMethod(context, caller, self, site, value);
-    }
-
-    static boolean fixnumBooleanFail(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, RubyFixnum value) throws Throwable {
-        return fixnumOperatorFail(context, caller, self, site, value).isTrue();
     }
 
     public static IRubyObject fixnum_op_plus(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
@@ -251,26 +204,6 @@ public class MathLinker {
 
     public static IRubyObject fixnum_op_ge(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
         return ((RubyFixnum)self).op_ge(context, value);
-    }
-
-    public static boolean fixnum_boolean_op_equal(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
-        return ((RubyFixnum)self).op_equal_boolean(context, value);
-    }
-
-    public static boolean fixnum_boolean_op_lt(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
-        return ((RubyFixnum)self).op_lt_boolean(context, value);
-    }
-
-    public static boolean fixnum_boolean_op_le(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
-        return ((RubyFixnum)self).op_le_boolean(context, value);
-    }
-
-    public static boolean fixnum_boolean_op_gt(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
-        return ((RubyFixnum)self).op_gt_boolean(context, value);
-    }
-
-    public static boolean fixnum_boolean_op_ge(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
-        return ((RubyFixnum)self).op_ge_boolean(context, value);
     }
 
     public static IRubyObject fixnum_op_cmp(ThreadContext context, IRubyObject caller, IRubyObject self, long value) throws Throwable {
@@ -314,31 +247,39 @@ public class MathLinker {
     }
     
     public static IRubyObject floatOperator(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, double value) throws Throwable {
-        String operator = site.name;
-        String opMethod = MethodIndex.getFastFloatOpsMethod(operator);
-        String name = "float_" + opMethod;
-        MethodHandle target = null;
-
-        if (target == null) target = findTargetImpl(name, IRubyObject.class, value);
-
         Ruby runtime = context.runtime;
-        MethodHandle fallback = FLOAT_OPERATOR_FAIL;
+        String operator = site.name;
 
-        fallback = insertArguments(fallback, 3, site, RubyFloat.newFloat(runtime, value));
+        MethodHandle target;
 
-        MethodHandle test = FLOAT_TEST;
-        test = permuteArguments(test, methodType(boolean.class, ThreadContext.class, IRubyObject.class, IRubyObject.class), ARG_2_TO_0);
-        if (LOG_BINDING) LOG.debug(name + "\tFloat operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound directly");
+        // fall back on a normal call site
+        MethodType fallbackType = site.type().appendParameterTypes(IRubyObject.class);
+        CallSite normalSite = NormalInvokeSite.newSite(LOOKUP, site.name, fallbackType, false, site.file(), site.line());
 
-        RubyClass classFloat = runtime.getFloat();
+        MethodHandle fallback = Binder.from(site.type())
+                .append(IRubyObject.class, runtime.newFloat(value))
+                .invoke(normalSite.dynamicInvoker());
+
         CacheEntry entry = searchWithCache(operator, caller, self.getMetaClass(), site);
-        if (entry == null || !entry.method.isBuiltin()) {
-            site.setTarget(fallback); // invalid - fallback on slow-path
+
+        if (!(self instanceof RubyFloat) || entry == null || !entry.method.isBuiltin()) {
+            site.setTarget(target = fallback); // invalid - fallback on slow-path
+
+            if (LOG_BINDING) LOG.debug(site.name + "\tFloat operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound to normal invocation");
         } else {
-            // confirm it's a Float
-            target = guardWithTest(test, target, fallback);
+            String opMethod = MethodIndex.getFastFloatOpsMethod(operator);
+            String name = "float_" + opMethod;
+
+            target = findTargetImpl(name, IRubyObject.class, value);
+
+            RubyClass classFloat = runtime.getFloat();
+
+            // confirm it's still a Float
+            target = guardWithTest(FLOAT_TEST_ARG_2_TO_0, target, fallback);
             target = ((SwitchPoint) classFloat.getInvalidator().getData()).guardWithTest(target, fallback);
             site.setTarget(target);
+
+            if (LOG_BINDING) LOG.debug(name + "\tFloat operation at site #" + site.siteID + " (" + site.file() + ":" + site.line() + ") bound directly");
         }
         
         return (IRubyObject) target.invokeWithArguments(context, caller, self);
@@ -392,10 +333,6 @@ public class MathLinker {
         return ((RubyFloat)self).op_cmp(context, value);
     }
 
-    static IRubyObject floatOperatorFail(ThreadContext context, IRubyObject caller, IRubyObject self, JRubyCallSite site, RubyFloat value) throws Throwable {
-        return callMethod(context, caller, self, site, value);
-    }
-
     private static MethodHandle findTargetImpl(final String name, Class<?> returnType, final long value) throws NoSuchMethodException, IllegalAccessException {
         MethodType type = methodType(returnType, ThreadContext.class, IRubyObject.class, IRubyObject.class);
         type = type.insertParameterTypes(3, long.class);
@@ -415,7 +352,7 @@ public class MathLinker {
         RubyClass selfClass = InvokeDynamicSupport.pollAndGetClass(context, self);
         CacheEntry entry = searchWithCache(operator, caller, selfClass, site);
         if (entry == null) { // method_missing
-            return InvokeDynamicSupport.callMethodMissing(entry, site.callType, context, self, operator, value);
+            return InvokeDynamicSupport.callMethodMissing(CacheEntry.NULL_CACHE, site.callType, context, self, operator, value);
         }
         return entry.method.call(context, self, entry.sourceModule, operator, value);
     }

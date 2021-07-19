@@ -57,7 +57,7 @@ public abstract class JRubyExecutionContextLocal extends RubyObject {
             }
             default_proc = block.getProcObject();
             if (default_proc == null) {
-                default_proc = RubyProc.newProc(context.runtime, block, block.type);
+                default_proc = RubyProc.newProc(context.runtime, block, block.type == Block.Type.LAMBDA ? block.type : Block.Type.PROC);
             }
         } else {
             if (args.length == 1) {
@@ -92,7 +92,7 @@ public abstract class JRubyExecutionContextLocal extends RubyObject {
             // pre-set for the sake of terminating recursive calls
             contextVariables.put(this, context.nil);
             final IRubyObject new_value;
-            new_value = default_proc.call(context, IRubyObject.NULL_ARRAY, null, Block.NULL_BLOCK);
+            new_value = default_proc.call(context, IRubyObject.NULL_ARRAY);
             contextVariables.put(this, new_value);
             return new_value;
         }

@@ -18,14 +18,13 @@ import java.util.List;
 /**
  * Represents a frozen string value.
  */
-public class FrozenString extends ImmutableLiteral<RubyString> implements Stringable {
-    // SSS FIXME: Pick one of bytelist or string, or add internal conversion methods to convert to the default representation
-
+public class FrozenString extends ImmutableLiteral<RubyString> implements Stringable, StringLiteral {
     public final ByteList bytelist;
     public final int      coderange;
-    public String string;
     public final String file;
     public final int line;
+
+    public String string;
 
     /**
      * Used by persistence and by .freeze optimization
@@ -142,5 +141,12 @@ public class FrozenString extends ImmutableLiteral<RubyString> implements String
         return new FrozenString(d.decodeByteList(), d.decodeInt(), d.decodeString(), d.decodeInt());
     }
 
-    public int getCodeRange() { return coderange; }
+    public int getCodeRange() {
+        return coderange;
+    }
+
+    @Override
+    public boolean isTruthyImmediate() {
+        return true;
+    }
 }

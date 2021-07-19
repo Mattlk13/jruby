@@ -49,6 +49,7 @@ import java.util.Set;
 import org.jruby.anno.JRubyClass;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ClassIndex;
+import org.jruby.runtime.JavaSites;
 import org.jruby.runtime.JavaSites.ObjectSites;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -118,6 +119,18 @@ public class RubyObject extends RubyBasicObject {
     }
 
     /**
+     * Reify the class and allocate an instance.
+     *
+     * @param runtime the current runtime
+     * @param klass the target Ruby class
+     * @return a new instance of the now-reified class
+     */
+    private static IRubyObject reifyAndAllocate(Ruby runtime, RubyClass klass) {
+        klass.reifyWithAncestors();
+        return klass.allocate();
+    }
+
+    /**
      * Will create the Ruby class Object in the runtime
      * specified. This method needs to take the actual class as an
      * argument because of the Object class' central part in runtime
@@ -136,12 +149,7 @@ public class RubyObject extends RubyBasicObject {
      *
      * @see org.jruby.runtime.ObjectAllocator
      */
-    public static final ObjectAllocator OBJECT_ALLOCATOR = new ObjectAllocator() {
-        @Override
-        public IRubyObject allocate(Ruby runtime, RubyClass klass) {
-            return new RubyObject(runtime, klass);
-        }
-    };
+    public static final ObjectAllocator OBJECT_ALLOCATOR = RubyObject::new;
 
     /**
      * Allocator that inspects all methods for instance variables and chooses
@@ -152,28 +160,36 @@ public class RubyObject extends RubyBasicObject {
     public static final ObjectAllocator IVAR_INSPECTING_OBJECT_ALLOCATOR = new ObjectAllocator() {
         @Override
         public IRubyObject allocate(Ruby runtime, RubyClass klass) {
-            Set<String> foundVariables = klass.discoverInstanceVariables();
+            ObjectAllocator allocator = klass.getAllocator();
 
-            if (Options.DUMP_INSTANCE_VARS.load()) {
-                System.err.println(klass + ";" + foundVariables);
+            if (allocator == this) {
+                // eagerly gather variables outside of sync
+                Set<String> foundVariables = klass.discoverInstanceVariables();
+
+                synchronized (klass.getRealClass()) {
+                    // check again before reifying
+                    allocator = klass.getAllocator();
+
+                    if (allocator == this) {
+                        // proceed, we are the first one to get here
+
+                        if (Options.DUMP_INSTANCE_VARS.load()) {
+                            System.err.println(klass + ";" + foundVariables);
+                        }
+
+                        allocator = RubyObjectSpecializer.specializeForVariables(klass, foundVariables);
+
+                        // invalidate metaclass so new allocator is picked up for specialized .new
+                        klass.metaClass.invalidateCacheDescendants();
+                    }
+                }
             }
-
-            ObjectAllocator allocator = RubyObjectSpecializer.specializeForVariables(klass, foundVariables);
-
-            // invalidate metaclass so new allocator is picked up for specialized .new
-            klass.metaClass.invalidateCacheDescendants();
 
             return allocator.allocate(runtime, klass);
         }
     };
 
-    public static final ObjectAllocator REIFYING_OBJECT_ALLOCATOR = new ObjectAllocator() {
-        @Override
-        public IRubyObject allocate(Ruby runtime, RubyClass klass) {
-            klass.reifyWithAncestors();
-            return klass.allocate();
-        }
-    };
+    public static final ObjectAllocator REIFYING_OBJECT_ALLOCATOR = RubyObject::reifyAndAllocate;
 
     /**
      * Will make sure that this object is added to the current object
@@ -215,7 +231,7 @@ public class RubyObject extends RubyBasicObject {
     public boolean equals(Object other) {
         return other == this ||
                 other instanceof IRubyObject &&
-                invokedynamic(getRuntime().getCurrentContext(), this, OP_EQUAL, (IRubyObject) other).isTrue();
+                invokedynamic(metaClass.runtime.getCurrentContext(), this, OP_EQUAL, (IRubyObject) other).isTrue();
     }
 
     /**
@@ -235,14 +251,14 @@ public class RubyObject extends RubyBasicObject {
      */
     @Override
     public String toString() {
-        return toRubyString(getRuntime().getCurrentContext()).getUnicodeValue();
+        return toRubyString(metaClass.runtime.getCurrentContext()).getUnicodeValue();
     }
 
     /**
      * Call the Ruby initialize method with the supplied arguments and block.
      */
     public final void callInit(IRubyObject[] args, Block block) {
-        ThreadContext context = getRuntime().getCurrentContext();
+        ThreadContext context = metaClass.runtime.getCurrentContext();
         metaClass.getBaseCallSite(RubyClass.CS_IDX_INITIALIZE).call(context, this, this, args, block);
     }
 
@@ -250,7 +266,7 @@ public class RubyObject extends RubyBasicObject {
      * Call the Ruby initialize method with the supplied arguments and block.
      */
     public final void callInit(Block block) {
-        ThreadContext context = getRuntime().getCurrentContext();
+        ThreadContext context = metaClass.runtime.getCurrentContext();
         metaClass.getBaseCallSite(RubyClass.CS_IDX_INITIALIZE).call(context, this, this, block);
     }
 
@@ -258,7 +274,7 @@ public class RubyObject extends RubyBasicObject {
      * Call the Ruby initialize method with the supplied arguments and block.
      */
     public final void callInit(IRubyObject arg0, Block block) {
-        ThreadContext context = getRuntime().getCurrentContext();
+        ThreadContext context = metaClass.runtime.getCurrentContext();
         metaClass.getBaseCallSite(RubyClass.CS_IDX_INITIALIZE).call(context, this, this, arg0, block);
     }
 
@@ -266,7 +282,7 @@ public class RubyObject extends RubyBasicObject {
      * Call the Ruby initialize method with the supplied arguments and block.
      */
     public final void callInit(IRubyObject arg0, IRubyObject arg1, Block block) {
-        ThreadContext context = getRuntime().getCurrentContext();
+        ThreadContext context = metaClass.runtime.getCurrentContext();
         metaClass.getBaseCallSite(RubyClass.CS_IDX_INITIALIZE).call(context, this, this, arg0, arg1, block);
     }
 
@@ -274,7 +290,7 @@ public class RubyObject extends RubyBasicObject {
      * Call the Ruby initialize method with the supplied arguments and block.
      */
     public final void callInit(IRubyObject arg0, IRubyObject arg1, IRubyObject arg2, Block block) {
-        ThreadContext context = getRuntime().getCurrentContext();
+        ThreadContext context = metaClass.runtime.getCurrentContext();
         metaClass.getBaseCallSite(RubyClass.CS_IDX_INITIALIZE).call(context, this, this, arg0, arg1, arg2, block);
     }
 
@@ -368,7 +384,7 @@ public class RubyObject extends RubyBasicObject {
      */
     @Override
     public IRubyObject op_eqq(ThreadContext context, IRubyObject other) {
-        return context.runtime.newBoolean(equalInternal(context, this, other));
+        return RubyBoolean.newBoolean(context, equalInternal(context, this, other));
     }
 
     /**
@@ -412,7 +428,7 @@ public class RubyObject extends RubyBasicObject {
      */
     @Override
     public int hashCode() {
-        IRubyObject hashValue = invokedynamic(getRuntime().getCurrentContext(), this, HASH);
+        IRubyObject hashValue = invokedynamic(metaClass.runtime.getCurrentContext(), this, HASH);
         if (hashValue instanceof RubyFixnum) return (int) RubyNumeric.fix2long(hashValue);
         return nonFixnumHashCode(hashValue);
     }
@@ -433,37 +449,76 @@ public class RubyObject extends RubyBasicObject {
 
         ObjectSites sites = sites(context);
 
-        if ( obj instanceof RubyArray ) {
-            if (sites.dig_array.isBuiltin(obj.getMetaClass())) {
-                return ((RubyArray) obj).dig(context, args, idx);
+        for (; idx < args.length; idx++) {
+            if ( obj.isNil() ) break;
+            IRubyObject arg = args[idx];
+            if (isArrayDig(obj, sites)) {
+                obj = ((RubyArray) obj).dig(context, arg);
+            } else if (isHashDig(obj, sites)) {
+                obj =  ((RubyHash) obj).dig(context, arg);
+            } else if (isStructDig(obj, sites)) {
+                obj =  ((RubyStruct) obj).dig(context, arg);
+            } else if (sites.respond_to_dig.respondsTo(context, obj, obj, true) ) {
+                final int len = args.length - idx;
+                switch (len) {
+                    case 1:
+                        return sites.dig_misc.call(context, obj, obj, args[idx]);
+                    case 2:
+                        return sites.dig_misc.call(context, obj, obj, args[idx], args[idx + 1]);
+                    case 3:
+                        return sites.dig_misc.call(context, obj, obj, args[idx], args[idx + 1], args[idx + 2]);
+                    default:
+                        IRubyObject[] rest = new IRubyObject[len];
+                        System.arraycopy(args, idx, rest, 0, len);
+                        return sites.dig_misc.call(context, obj, obj, rest);
+
+                }
+            } else {
+                throw context.runtime.newTypeError(obj.getMetaClass().getName() + " does not have #dig method");
             }
         }
-        if ( obj instanceof RubyHash ) {
-            if (sites.dig_hash.isBuiltin(obj.getMetaClass())) {
-                return ((RubyHash) obj).dig(context, args, idx);
-            }
-        }
-        if ( obj instanceof RubyStruct ) {
-            if (sites.dig_struct.isBuiltin(obj.getMetaClass())) {
-                return ((RubyStruct) obj).dig(context, args, idx);
-            }
-        }
+
+        return obj;
+    }
+
+    public static IRubyObject dig1(ThreadContext context, IRubyObject obj, IRubyObject arg1) {
+        if ( obj.isNil() ) return context.nil;
+
+        ObjectSites sites = sites(context);
+
+        if (isArrayDig(obj, sites)) return ((RubyArray) obj).dig(context, arg1);
+        if (isHashDig(obj, sites)) return ((RubyHash) obj).dig(context, arg1);
+        if (isStructDig(obj, sites)) return ((RubyStruct) obj).dig(context, arg1);
         if (sites.respond_to_dig.respondsTo(context, obj, obj, true) ) {
-            final int len = args.length - idx;
-            switch ( len ) {
-                case 1:
-                    return sites.dig_misc.call(context, obj, obj, args[idx]);
-                case 2:
-                    return sites.dig_misc.call(context, obj, obj, args[idx], args[idx+1]);
-                case 3:
-                    return sites.dig_misc.call(context, obj, obj, args[idx], args[idx+1], args[idx+2]);
-                default:
-                    IRubyObject[] rest = new IRubyObject[len];
-                    System.arraycopy(args, idx, rest, 0, len);
-                    return sites.dig_misc.call(context, obj, obj, rest);
-            }
+            return sites.dig_misc.call(context, obj, obj, arg1);
         }
         throw context.runtime.newTypeError(obj.getMetaClass().getName() + " does not have #dig method");
+    }
+
+    public static IRubyObject dig2(ThreadContext context, IRubyObject obj, IRubyObject arg1, IRubyObject arg2) {
+        if ( obj.isNil() ) return context.nil;
+
+        ObjectSites sites = sites(context);
+
+        if (isArrayDig(obj, sites)) return ((RubyArray) obj).dig(context, arg1, arg2);
+        if (isHashDig(obj, sites)) return ((RubyHash) obj).dig(context, arg1, arg2);
+        if (isStructDig(obj, sites)) return ((RubyStruct) obj).dig(context, arg1, arg2);
+        if (sites.respond_to_dig.respondsTo(context, obj, obj, true) ) {
+            return sites.dig_misc.call(context, obj, obj, arg1, arg2);
+        }
+        throw context.runtime.newTypeError(obj.getMetaClass().getName() + " does not have #dig method");
+    }
+
+    private static boolean isStructDig(IRubyObject obj, ObjectSites sites) {
+        return obj instanceof RubyStruct && sites.dig_struct.isBuiltin(obj.getMetaClass());
+    }
+
+    private static boolean isHashDig(IRubyObject obj, ObjectSites sites) {
+        return obj instanceof RubyHash && sites.dig_hash.isBuiltin(obj.getMetaClass());
+    }
+
+    private static boolean isArrayDig(IRubyObject obj, ObjectSites sites) {
+        return obj instanceof RubyArray && sites.dig_array.isBuiltin(obj.getMetaClass());
     }
 
     /**

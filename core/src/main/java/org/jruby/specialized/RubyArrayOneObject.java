@@ -103,9 +103,9 @@ public class RubyArrayOneObject extends RubyArraySpecialized {
     }
 
     @Override
-    public IRubyObject dup() {
-        if (!packed()) return super.dup();
-        return new RubyArrayOneObject(this);
+    protected RubyArray dupImpl(Ruby runtime, RubyClass metaClass) {
+        if (!packed()) return super.dupImpl(runtime, metaClass);
+        return new RubyArrayOneObject(metaClass, this);
     }
 
     @Override
@@ -223,15 +223,14 @@ public class RubyArrayOneObject extends RubyArraySpecialized {
     }
 
     @Override
-    public IRubyObject store(long index, IRubyObject value) {
-        if (!packed()) return super.store(index, value);
-
-        if (index == 0) {
-            return this.value = value;
+    protected void storeInternal(final int index, final IRubyObject value) {
+        if (index == 0 && packed()) {
+            this.value = value;
+            return;
         }
 
-        unpack();
-        return super.store(index, value);
+        if (packed()) unpack(); // index > 0
+        super.storeInternal(index, value);
     }
 
     @Override
@@ -258,6 +257,22 @@ public class RubyArrayOneObject extends RubyArraySpecialized {
     @Override
     public IRubyObject uniq(ThreadContext context) {
         if (!packed()) return super.uniq(context);
+
+        return new RubyArrayOneObject(this);
+    }
+
+    @Override
+    public RubyArray collectCommon(ThreadContext context, Block block) {
+        if (!packed()) return super.collectCommon(context, block);
+
+        if (!block.isGiven()) return makeShared();
+
+        return new RubyArrayOneObject(context.runtime, block.yieldNonArray(context, value, null));
+    }
+
+    @Override
+    protected RubyArray makeShared() {
+        if (!packed()) return super.makeShared();
 
         return new RubyArrayOneObject(this);
     }

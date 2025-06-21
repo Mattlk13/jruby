@@ -6,7 +6,6 @@ project 'JRuby', 'https://github.com/jruby/jruby' do
   model_version '4.0.0'
   inception_year '2001'
   id 'org.jruby:jruby-parent', version
-  inherit 'org.sonatype.oss:oss-parent:7'
   packaging 'pom'
 
   description 'JRuby is the effort to recreate the Ruby (https://www.ruby-lang.org) interpreter in Java.'
@@ -73,7 +72,7 @@ project 'JRuby', 'https://github.com/jruby/jruby' do
               'asm.version' => '9.7.1',
               'jar-dependencies.version' => '0.4.1',
               'jffi.version' => '1.3.13',
-              'joda.time.version' => '2.12.7' )
+              'joda.time.version' => '2.14.0' )
 
   plugin_management do
     jar( 'junit:junit:4.13.1',
@@ -141,6 +140,10 @@ project 'JRuby', 'https://github.com/jruby/jruby' do
     plugin 'org.eclipse.m2e:lifecycle-mapping:1.0.0'
     plugin :'scm-publish', '3.1.0'
   end
+  
+  plugin( 'org.sonatype.central:central-publishing-maven-plugin:0.7.0',
+          extensions: true,
+          publishingServerId: 'central')
 
   plugin( :site,
           'port' =>  '9000',
@@ -274,17 +277,16 @@ project 'JRuby', 'https://github.com/jruby/jruby' do
       execute_goals('jar', :id => 'attach-javadocs')
       configuration(doclint: 'none')
     end
+    plugin( :gpg, '1.6',
+            gpgArguments: [ '--pinentry-mode', 'loopback' ]) do
+      execute_goals( 'sign', id: 'sign-artifacts', phase: 'verify')
+    end
   end
 
   profile 'snapshots' do
 
     modules [ 'maven' ]
 
-    distribution_management do
-      repository( :url => "file:${project.build.directory}/maven", :id => 'local releases' )
-      snapshot_repository( :url => "file:${project.build.directory}/maven",
-                           :id => 'local snapshots' )
-    end
     build do
       default_goal :deploy
     end
@@ -294,6 +296,7 @@ project 'JRuby', 'https://github.com/jruby/jruby' do
     end
     plugin(:javadoc) do
       execute_goals('jar', :id => 'attach-javadocs')
+      configuration(doclint: 'none', additionalOptions: '-Xdoclint:none', failOnError: 'false')
     end
   end
 

@@ -113,6 +113,7 @@ public class RubyTime extends RubyObject {
     private static final BigDecimal ONE_MILLION_BD = BigDecimal.valueOf(1000000);
     private static final BigDecimal ONE_BILLION_BD = BigDecimal.valueOf(1000000000);
     public static final int TIME_SCALE = 1_000_000_000;
+    public static final int TIME_SCALE_DIGITS = 9;
 
     private DateTime dt;
     private long nsec;
@@ -629,7 +630,11 @@ public class RubyTime extends RubyObject {
     public RubyTime localtime(ThreadContext context, IRubyObject arg) {
         final DateTimeZone zone = getTimeZoneFromUtcOffset(context, arg);
 
-        if (zone == null) throw invalidUTCOffset(context);
+        if (zone == null) {
+            throw invalidUTCOffset(context);
+        } else if (zone == DateTimeZone.UTC) {
+            return gmtime(context);
+        }
 
         return adjustTimeZone(context, zone, true);
     }
@@ -1780,10 +1785,8 @@ public class RubyTime extends RubyObject {
             this.zone = zone;
             dtz = DateTimeZone.UTC;
         } else {
-            dtz = getTimeZoneFromUtcOffset(context, zone);
-            if (dtz != null) {
-                this.setIsTzRelative(true);
-            } else {
+            dtz = handleUTCDateTimeZone(context, zone);
+            if (dtz == null) {
                 this.zone = findTimezone(context, zone);
                 maybeZoneObj = true;
                 dtz = DateTimeZone.UTC;
@@ -1833,53 +1836,65 @@ public class RubyTime extends RubyObject {
         return context.nil;
     }
 
+    private DateTimeZone handleUTCDateTimeZone(ThreadContext context, IRubyObject zone) {
+        var dtz = getTimeZoneFromUtcOffset(context, zone);
+
+        // FIXME: At some point UTC started returning "UTC" for #zone.  This is a form-fit and
+        // we need to resolve how we store info about zone and joda time vs how MRI stores the
+        // same info.
+        if (dtz != null) {
+            if (!(zone instanceof RubyString &&
+                    (zone.asJavaString().equals("Z") ||
+                            zone.asJavaString().equals("UTC") ||
+                            zone.asJavaString().equals("-00:00")))) {
+                this.setIsTzRelative(true);
+            }
+        }
+        return dtz;
+    }
+
     @JRubyMethod(name = "initialize", optional = 8, checkArity = false, visibility = PRIVATE, keywords = true)
     public IRubyObject initialize(ThreadContext context, IRubyObject[] args) {
         boolean keywords = hasKeywords(ThreadContext.resetCallInfo(context));
-        int argc = args.length - (keywords ? 1 : 0);
+        int argc = args.length;
         IRubyObject zone = context.nil;
         IRubyObject precision = context.nil;
 
         if (keywords) {
             IRubyObject[] opts = ArgsUtil.extractKeywordArgs(context, args[args.length - 1], "in", "precision");
-            if (opts[0] != null) {
-                if (args.length > 7) throw argumentError(context, "timezone argument given as positional and keyword arguments");
-                zone = opts[0];
-            } else if (args.length > 6) {
-                zone = args[6];
-            }
 
-            if (opts[1] != null) {
-                if (!(opts[1] instanceof RubyNumeric)) {
-                    // Weird error since all numerics work at this point so why mention Integer?
-                    throw typeError(context, str(context.runtime, "no implicit conversion of ", typeAsString(opts[1]), " into Integer"));
+            if (opts != null) {
+                argc -= 1;
+
+                if (opts[0] != null) {
+                    if (argc > 6) {
+                        throw argumentError(context, "timezone argument given as positional and keyword arguments");
+                    }
+                    zone = opts[0];
                 }
-                precision = opts[1];
+
+                if (opts[1] != null) {
+                    if (!(opts[1] instanceof RubyNumeric)) {
+                        // Weird error since all numerics work at this point so why mention Integer?
+                        throw typeError(context, str(context.runtime, "no implicit conversion of ", typeAsString(opts[1]), " into Integer"));
+                    }
+                    precision = opts[1];
+                }
             }
-        } else if (args.length > 6) {
-            zone = args[6];
         }
+
+        if (argc > 6) zone = args[6];
 
         IRubyObject nil = context.nil;
 
         return switch (argc) {
             case 0 -> initializeNow(context, zone);
             case 1 -> timeInitParse(context, args[0], zone, precision);
-            case 2 -> keywords ?
-                    initialize(context, args[0], nil, nil, nil, nil, nil, precision, zone) :
-                    initialize(context, args[0], args[1], nil, nil, nil, nil, precision);
-            case 3 -> keywords ?
-                    initialize(context, args[0], args[1], nil, nil, nil, nil, precision, zone) :
-                    initialize(context, args[0], args[1], args[2], nil, nil, nil, precision);
-            case 4 -> keywords ?
-                    initialize(context, args[0], args[1], args[2], nil, nil, nil, precision, zone) :
-                    initialize(context, args[0], args[1], args[2], args[3], nil, nil, precision);
-            case 5 -> keywords ?
-                    initialize(context, args[0], args[1], args[2], args[3], nil, nil, precision, zone) :
-                    initialize(context, args[0], args[1], args[2], args[3], args[4], nil, precision);
-            case 6 -> keywords ?
-                    initialize(context, args[0], args[1], args[2], args[3], args[4], nil, precision, zone) :
-                    initialize(context, args[0], args[1], args[2], args[3], args[4], args[5], precision);
+            case 2 -> initialize(context, args[0], args[1], nil, nil, nil, nil, precision, zone);
+            case 3 -> initialize(context, args[0], args[1], args[2], nil, nil, nil, precision, zone);
+            case 4 -> initialize(context, args[0], args[1], args[2], args[3], nil, nil, precision, zone);
+            case 5 -> initialize(context, args[0], args[1], args[2], args[3], args[4], nil, precision, zone);
+            case 6 -> initialize(context, args[0], args[1], args[2], args[3], args[4], args[5], precision, zone);
             case 7 -> initialize(context, args[0], args[1], args[2], args[3], args[4], args[5], precision, zone);
             default -> throw argumentError(context, argc, 0, 7);
         };
@@ -1932,10 +1947,8 @@ public class RubyTime extends RubyObject {
             this.zone = zone;
             dtz = DateTimeZone.UTC;
         } else {
-            dtz = getTimeZoneFromUtcOffset(context, zone);
-            if (dtz != null) {
-                this.setIsTzRelative(true);
-            } else {
+            dtz = handleUTCDateTimeZone(context, zone);
+            if (dtz == null) {
                 this.zone = findTimezone(context, zone);
                 maybeZoneObj = true;
                 dtz = DateTimeZone.UTC;

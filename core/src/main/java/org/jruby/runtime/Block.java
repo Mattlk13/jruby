@@ -227,7 +227,9 @@ public class Block implements FunctionOneOrTwoOrThree<ThreadContext, IRubyObject
     // This should be the only argument massaging in yield.  This handles all argument conversion logic except
     // for the generic Block#yield(IRubyObject value).
     private static IRubyObject[] maybeSpreadArgs(ThreadContext context, IRubyObject[] args, Block block) {
-        return block.type != Type.LAMBDA && args.length == 1 && block.getSignature().isSpreadable() ?
+        Signature sig = block.getSignature();
+        return block.type != Type.LAMBDA && args.length == 1 && sig.isSpreadable()
+                && !(sig.opt() + sig.required() == 1 && !sig.hasRest()) ?
                 IRRuntimeHelpers.toAry(context, args) :
                 args;
     }

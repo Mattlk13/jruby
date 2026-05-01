@@ -504,13 +504,7 @@ public class RubyException extends RubyObject {
             return;
         }
 
-        Object c = cause;
-        while (c instanceof RubyException causeException) {
-            if (c == this) {
-                throw argumentError(context, "circular causes");
-            }
-            c = causeException.getCause();
-        }
+        checkCircularCause(context, this, cause);
 
         this.cause = cause;
 
@@ -531,6 +525,20 @@ public class RubyException extends RubyObject {
                 Ruby runtime = getRuntime();
                 throw typeError(runtime.getCurrentContext(), "exception object expected");
             }
+        }
+    }
+
+    static void checkCircularCause(ThreadContext context, IRubyObject exception, IRubyObject cause) {
+        if (cause == exception) {
+            return;
+        }
+
+        Object c = cause;
+        while (c instanceof RubyException causeException) {
+            if (c == exception) {
+                throw argumentError(context, "circular causes");
+            }
+            c = causeException.getCause();
         }
     }
 

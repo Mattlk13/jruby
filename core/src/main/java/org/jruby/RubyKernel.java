@@ -1152,7 +1152,19 @@ public class RubyKernel {
 
         var exception = raise.getException();
         if (context.runtime.isDebug()) printExceptionSummary(context, exception);
-        if (causeGiven || exception.getCause() == null && cause != exception) exception.setCause(context, cause);
+
+        if (!cause.isNil()) {
+            RubyException.checkCircularCause(context, exception, cause);
+
+            if (causeGiven) {
+                exception.setCause(context, cause);
+            } else if (exception.getCause() == null) {
+                if (cause != exception) {
+                    exception.setCause(context, cause);
+                }
+            }
+        }
+
 
         return Helpers.throwExceptionT(raise);
     }

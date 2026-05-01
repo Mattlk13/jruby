@@ -1346,6 +1346,8 @@ public class RubyKernel {
     private static void printDebugException(ThreadContext context, RubyException exception) {
         Ruby runtime = context.runtime;
         if (runtime.isDebug()) {
+            // trigger exception backtrace construction
+            exception.toThrowable();
             RubyStackTraceElement[] elements = exception.getBacktraceElements();
             RubyStackTraceElement firstElement = elements.length > 0 ? elements[0] :
                     new RubyStackTraceElement("", "", "(empty)", 0, false);

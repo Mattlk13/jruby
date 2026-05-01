@@ -1022,11 +1022,6 @@ public class RubyKernel {
         return str.op_format(context, arg);
     }
 
-    @Deprecated
-    public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args, Block block) {
-        return raise(context, recv, args);
-    }
-
     @JRubyMethod(name = {"raise", "fail"}, optional = 4, checkArity = false, module = true, visibility = PRIVATE, omit = true, keywords = true)
     public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args) {
         return switch (args.length) {
@@ -2717,5 +2712,10 @@ public class RubyKernel {
             default:
                 throw argumentError(context, args.length, 2, 3);
         }
+    }
+
+    @Deprecated(since = "10.1.1.0")
+    public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args, Block block) {
+        return raise(context, recv, args);
     }
 }

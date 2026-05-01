@@ -59,7 +59,6 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
 import org.jruby.api.Warn;
 import org.jruby.ast.util.ArgsUtil;
-import org.jruby.common.IRubyWarnings;
 import org.jruby.common.RubyWarnings;
 import org.jruby.exceptions.CatchThrow;
 import org.jruby.exceptions.MainExitException;
@@ -69,7 +68,6 @@ import org.jruby.internal.runtime.methods.DynamicMethod;
 import org.jruby.internal.runtime.methods.JavaMethod;
 import org.jruby.internal.runtime.methods.JavaMethod.JavaMethodNBlock;
 import org.jruby.ir.interpreter.Interpreter;
-import org.jruby.ir.operands.UndefinedValue;
 import org.jruby.ir.runtime.IRRuntimeHelpers;
 import org.jruby.java.proxies.ConcreteJavaProxy;
 import org.jruby.platform.Platform;
@@ -96,7 +94,6 @@ import org.jruby.util.func.ObjectIntIntFunction;
 import org.jruby.util.io.OpenFile;
 import org.jruby.util.io.PopenExecutor;
 
-import static org.jruby.RubyBasicObject.UNDEF;
 import static org.jruby.RubyEnumerator.SizeFn;
 import static org.jruby.RubyEnumerator.enumeratorizeWithSize;
 import static org.jruby.RubyFile.fileResource;
@@ -117,7 +114,6 @@ import static org.jruby.api.Access.argsFile;
 import static org.jruby.api.Access.fileClass;
 import static org.jruby.api.Access.globalVariables;
 import static org.jruby.api.Access.integerClass;
-import static org.jruby.api.Access.ioClass;
 import static org.jruby.api.Access.kernelModule;
 import static org.jruby.api.Access.loadService;
 import static org.jruby.api.Access.objectClass;
@@ -138,7 +134,6 @@ import static org.jruby.api.Create.newSharedString;
 import static org.jruby.api.Create.newString;
 import static org.jruby.api.Error.argumentError;
 import static org.jruby.api.Error.typeError;
-import static org.jruby.api.Warn.warnDeprecatedForRemovalAlternate;
 import static org.jruby.ir.runtime.IRRuntimeHelpers.dupIfKeywordRestAtCallsite;
 import static org.jruby.ir.runtime.IRRuntimeHelpers.receiveKeywords;
 import static org.jruby.runtime.ThreadContext.hasKeywords;
@@ -1055,15 +1050,26 @@ public class RubyKernel {
         return null; // not reached
     }
 
-    @JRubyMethod(name = {"raise", "fail"}, optional = 4, checkArity = false, module = true, visibility = PRIVATE, omit = true, keywords = true)
+    @Deprecated
     public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args, Block block) {
+        return raise(context, recv, args);
+    }
+
+    @JRubyMethod(name = {"raise", "fail"}, optional = 4, checkArity = false, module = true, visibility = PRIVATE, omit = true, keywords = true)
+    public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args) {
         int argc = args.length;
+
+        switch (argc) {
+            case 0:
+                return raise(context, recv);
+        }
+
         boolean forceCause = false;
 
         // semi extract_raise_opts :
         int callInfo = ThreadContext.resetCallInfo(context);
         IRubyObject cause = null;
-        if (ThreadContext.hasNonemptyKeywords(callInfo) && argc > 0) {
+        if (ThreadContext.hasNonemptyKeywords(callInfo)) {
             IRubyObject last = args[argc - 1];
             if (last instanceof RubyHash opt) {
                 RubySymbol key;
@@ -1079,28 +1085,19 @@ public class RubyKernel {
 
         Arity.checkArgumentCount(context, argc, 0, 3);
 
-        if ( argc > 0 ) { // for argc == 0 we will be raising $!
-            // NOTE: getErrorInfo needs to happen before new RaiseException(...)
-            if ( cause == null ) cause = context.getErrorInfo(); // returns nil for no error-info
-        }
+        // for argc == 0 we will be raising $!
+        // NOTE: getErrorInfo needs to happen before new RaiseException(...)
+        if ( cause == null ) cause = context.getErrorInfo(); // returns nil for no error-info
 
         Throwable throwable = unwrapJavaException(context, args, argc);
 
         if (throwable == null) {
             RaiseException raise;
             switch (argc) {
-                case 0:
-                    IRubyObject lastException = globalVariables(context).get("$!");
-                    if (lastException.isNil()) {
-                        raise = RaiseException.from(context.runtime, runtimeErrorClass(context), "");
-                    } else {
-                        // non RubyException value is allowed to be assigned as $!.
-                        raise = ((RubyException) lastException).toThrowable();
-                    }
-                    break;
+                // non RubyException value is allowed to be assigned as $!.
                 case 1:
                     if (args[0] instanceof RubyString) {
-                        raise = ((RubyException) runtimeErrorClass(context).newInstance(context, args[0], block)).toThrowable();
+                        raise = ((RubyException) runtimeErrorClass(context).newInstance(context, args[0])).toThrowable();
                     } else {
                         raise = convertToException(context, args[0], null).toThrowable();
                     }
@@ -1117,13 +1114,39 @@ public class RubyKernel {
 
             var exception = raise.getException();
             if (context.runtime.isDebug()) printExceptionSummary(context, exception);
-            if (forceCause || argc > 0 && exception.getCause() == null && cause != exception) exception.setCause(context, cause);
+            if (forceCause || exception.getCause() == null && cause != exception) exception.setCause(context, cause);
 
             throwable = raise;
         }
 
         Helpers.throwException(throwable);
         return null; // not reached
+    }
+
+    @JRubyMethod(name = {"raise", "fail"}, module = true, visibility = PRIVATE, omit = true, keywords = true)
+    public static IRubyObject raise(ThreadContext context, IRubyObject recv) {
+        ThreadContext.resetCallInfo(context);
+
+        IRubyObject lastException = context.getErrorInfo();
+        Throwable throwable = unwrapJavaException(context, lastException);
+
+        if (throwable != null) Helpers.throwException(throwable);
+
+        RaiseException raise;
+        if (lastException instanceof RubyException exception) {
+            // non RubyException value is allowed to be assigned as $!.
+            raise = exception.toThrowable();
+        } else {
+            raise = newBlankRuntimeException(context);
+        }
+
+        if (context.runtime.isDebug()) printExceptionSummary(context, raise.getException());
+
+        return Helpers.throwExceptionT(raise);
+    }
+
+    private static RaiseException newBlankRuntimeException(ThreadContext context) {
+        return RaiseException.from(context.runtime, runtimeErrorClass(context), "");
     }
 
     /**

@@ -1036,7 +1036,12 @@ public class RubyKernel {
                 return raise(context, recv);
             case 1:
                 return raise(context, recv, args[0]);
+            case 2:
+                return raise(context, recv, args[0], args[1]);
         }
+
+        IRubyObject arg0 = args[0];
+        IRubyObject arg1 = args[1];
 
         boolean forceCause = false;
 
@@ -1067,23 +1072,13 @@ public class RubyKernel {
 
         if (throwable == null) {
             RaiseException raise;
-            switch (argc) {
-                // non RubyException value is allowed to be assigned as $!.
-                case 1:
-                    if (args[0] instanceof RubyString) {
-                        raise = ((RubyException) runtimeErrorClass(context).newInstance(context, args[0])).toThrowable();
-                    } else {
-                        raise = convertToException(context, args[0], null).toThrowable();
-                    }
-                    break;
-                case 2:
-                    raise = convertToException(context, args[0], args[1]).toThrowable();
-                    break;
-                default:
-                    RubyException exception = convertToException(context, args[0], args[1]);
-                    exception.setBacktrace(context, args[2]);
-                    raise = exception.toThrowable();
-                    break;
+            // non RubyException value is allowed to be assigned as $!.
+            if (argc == 2) {
+                raise = convertToException(context, arg0, arg1).toThrowable();
+            } else {
+                RubyException exception = convertToException(context, arg0, arg1);
+                exception.setBacktrace(context, args[2]);
+                raise = exception.toThrowable();
             }
 
             var exception = raise.getException();
@@ -1158,6 +1153,59 @@ public class RubyKernel {
         }
 
         return Helpers.throwExceptionT(raise);
+    }
+
+    @JRubyMethod(name = {"raise", "fail"}, module = true, visibility = PRIVATE, omit = true, keywords = true)
+    public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject arg0, IRubyObject arg1) {
+        int argc = 2;
+
+        boolean causeGiven = false;
+
+        // semi extract_raise_opts :
+        int callInfo = ThreadContext.resetCallInfo(context);
+        IRubyObject cause = null;
+        if (ThreadContext.hasNonemptyKeywords(callInfo)) {
+            if (arg1 instanceof RubyHash opt) {
+                RubySymbol key;
+                if (!opt.isEmpty() && (opt.has_key_p(context, key = asSymbol(context, "cause")) == context.tru)) {
+                    cause = opt.delete(context, key, Block.NULL_BLOCK);
+                    causeGiven = true;
+                    if (opt.isEmpty()) {
+                        --argc;
+                    }
+                }
+            }
+        }
+
+        // for argc == 0 we will be raising $!
+        // NOTE: getErrorInfo needs to happen before new RaiseException(...)
+        if ( cause == null ) cause = context.getErrorInfo(); // returns nil for no error-info
+
+        Throwable throwable = unwrapJavaException(context, arg0);
+        if (throwable != null) Helpers.throwException(throwable);
+
+        RaiseException raise;
+        switch (argc) {
+            // non RubyException value is allowed to be assigned as $!.
+            case 1:
+                if (arg0 instanceof RubyString) {
+                    raise = ((RubyException) runtimeErrorClass(context).newInstance(context, arg0)).toThrowable();
+                } else {
+                    raise = convertToException(context, arg0, null).toThrowable();
+                }
+                break;
+            case 2:
+            default:
+                raise = convertToException(context, arg0, arg1).toThrowable();
+                break;
+        }
+
+        var exception = raise.getException();
+        if (context.runtime.isDebug()) printExceptionSummary(context, exception);
+        if (causeGiven || exception.getCause() == null && cause != exception) exception.setCause(context, cause);
+
+        Helpers.throwException(raise);
+        return null; // not reached
     }
 
     private static RaiseException newBlankRuntimeException(ThreadContext context) {

@@ -4152,7 +4152,12 @@ public final class Ruby implements Constantizable {
             }
         }
 
-        return new RubyNameError(this, getNameError(), message, name).toThrowable();
+        RubyNameError nameError = new RubyNameError(this, getNameError(), message, name);
+
+        // set cause since we are preparing to raise
+        nameError.setCause(getCurrentContext().getErrorInfo());
+
+        return nameError.toThrowable();
     }
 
     public RaiseException newNameError(String message, IRubyObject name, Throwable exception, boolean printWhenVerbose) {
@@ -4164,7 +4169,12 @@ public final class Ruby implements Constantizable {
             }
         }
 
-        return new RubyNameError(this, getNameError(), message, name).toThrowable();
+        RubyNameError nameError = new RubyNameError(this, getNameError(), message, name);
+
+        // set cause since we are preparing to raise
+        nameError.setCause(getCurrentContext().getErrorInfo());
+
+        return nameError.toThrowable();
     }
 
     /**

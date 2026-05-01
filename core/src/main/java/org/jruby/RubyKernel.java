@@ -1022,34 +1022,6 @@ public class RubyKernel {
         return str.op_format(context, arg);
     }
 
-    public static IRubyObject raise(ThreadContext context, IRubyObject self, IRubyObject arg0) {
-        // semi extract_raise_opts :
-        if (arg0 instanceof RubyHash opt && !opt.isEmpty() &&
-                opt.has_key_p(context, asSymbol(context, "cause")) == context.tru) {
-                throw argumentError(context, "only cause is given with no arguments");
-        }
-
-        IRubyObject cause = context.getErrorInfo(); // returns nil for no error-info
-
-        Throwable throwable = unwrapJavaException(context, arg0);
-
-        if (throwable == null) {
-            RaiseException raise = arg0 instanceof RubyString ?
-                    ((RubyException) context.runtime.getRuntimeError().newInstance(context, arg0)).toThrowable() :
-                    convertToException(context, arg0, null).toThrowable();
-
-            var exception = raise.getException();
-
-            if (context.runtime.isDebug()) printExceptionSummary(context, exception);
-            if (exception.getCause() == null && cause != exception) exception.setCause(context, cause);
-
-            throwable = raise;
-        }
-
-        Helpers.throwException(throwable);
-        return null; // not reached
-    }
-
     @Deprecated
     public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject[] args, Block block) {
         return raise(context, recv, args);
@@ -1062,6 +1034,8 @@ public class RubyKernel {
         switch (argc) {
             case 0:
                 return raise(context, recv);
+            case 1:
+                return raise(context, recv, args[0]);
         }
 
         boolean forceCause = false;
@@ -1076,8 +1050,8 @@ public class RubyKernel {
                 if (!opt.isEmpty() && (opt.has_key_p(context, key = asSymbol(context, "cause")) == context.tru)) {
                     cause = opt.delete(context, key, Block.NULL_BLOCK);
                     forceCause = true;
-                    if (opt.isEmpty() && --argc == 0) { // more opts will be passed along
-                        throw argumentError(context, "only cause is given with no arguments");
+                    if (opt.isEmpty()) {
+                        --argc;
                     }
                 }
             }
@@ -1141,6 +1115,47 @@ public class RubyKernel {
         }
 
         if (context.runtime.isDebug()) printExceptionSummary(context, raise.getException());
+
+        return Helpers.throwExceptionT(raise);
+    }
+
+    @JRubyMethod(name = {"raise", "fail"}, module = true, visibility = PRIVATE, omit = true, keywords = true)
+    public static IRubyObject raise(ThreadContext context, IRubyObject recv, IRubyObject arg0) {
+        boolean causeGiven = false;
+
+        int callInfo = ThreadContext.resetCallInfo(context);
+        IRubyObject cause = null;
+        if (ThreadContext.hasNonemptyKeywords(callInfo)) {
+            if (arg0 instanceof RubyHash opt) {
+                RubySymbol key;
+                if (!opt.isEmpty() && (opt.has_key_p(context, key = asSymbol(context, "cause")) == context.tru)) {
+                    cause = opt.delete(context, key, Block.NULL_BLOCK);
+                    causeGiven = true;
+                    if (opt.isEmpty()) {
+                        throw argumentError(context, "only cause is given with no arguments");
+                    }
+                }
+            }
+        }
+
+        if ( cause == null ) cause = context.getErrorInfo();
+
+        Throwable throwable = unwrapJavaException(context, arg0);
+        if (throwable != null) Helpers.throwException(throwable);
+
+        RaiseException raise;
+        // non RubyException value is allowed to be assigned as $!.
+        if (arg0 instanceof RubyString) {
+            raise = ((RubyException) runtimeErrorClass(context).newInstance(context, arg0)).toThrowable();
+        } else {
+            raise = convertToException(context, arg0, null).toThrowable();
+        }
+
+        var exception = raise.getException();
+        if (context.runtime.isDebug()) printExceptionSummary(context, exception);
+        if (causeGiven || exception.getCause() == null && cause != exception) {
+            exception.setCause(context, cause);
+        }
 
         return Helpers.throwExceptionT(raise);
     }

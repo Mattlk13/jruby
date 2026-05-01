@@ -1,1 +1,0 @@
-fails:Kernel#raise with previously rescued exception re-raises a previously rescued exception that doesn't have a cause and is a cause of other exception (that wasn't raised explicitly) without setting a cause implicitly

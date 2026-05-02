@@ -1196,15 +1196,13 @@ public class RubyKernel {
      * @param exception the exception
      */
     private static void setGivenExceptionCause(ThreadContext context, Cause cause, RubyException exception) {
-        if (!cause.value.isNil()) {
+        if (!cause.value.isNil() && cause.value != exception) {
             RubyException.checkCircularCause(context, exception, cause.value);
 
             if (cause.provided) {
                 exception.setCause(context, cause.value);
             } else if (exception.getCause() == null) {
-                if (cause.value != exception) {
-                    exception.setCause(context, cause.value);
-                }
+                exception.setCause(context, cause.value);
             }
         }
     }
@@ -1217,7 +1215,7 @@ public class RubyKernel {
      * @param cause the cause
      */
     private static void setNewExceptionCause(ThreadContext context, RubyException exception, Cause cause) {
-        if (cause.provided || exception.getCause() == null && cause.value != exception) exception.setCause(context, cause.value);
+        if ((cause.provided || exception.getCause() == null) && cause.value != exception) exception.setCause(context, cause.value);
     }
 
     /**

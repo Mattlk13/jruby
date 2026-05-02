@@ -5656,6 +5656,9 @@ public final class Ruby implements Constantizable {
                     Ruby.this.getWarnings().warn(filename, "break from proc-closure");
                 }
 
+                // avoid errors during END being seen by other END blocks
+                context.clearErrorInfo();
+
             } catch (SystemExit exit) {
                 RubyException raisedException = exit.getException();
                 // adopt new exit code

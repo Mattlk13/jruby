@@ -1,8 +1,6 @@
-
 exclude :test_cause_exception_in_cause_message, "work in progress"
 exclude :test_circular_cause_handle, "needs investigation"
 exclude :test_control_in_message, "work in progress"
-exclude :test_detailed_message_under_gc_compact_stress, "GC is not configurable"
 exclude :test_errinfo_encoding_in_debug, "needs investigation"
 exclude :test_errno_constants, "needs investigation"
 exclude :test_exception_in_ensure_with_next, "uses RubyVM"
@@ -12,7 +10,6 @@ exclude :test_machine_stackoverflow_by_define_method, "expects Ruby SystemStackE
 exclude :test_marshal_circular_cause, "needs investigation"
 exclude :test_multibyte_and_newline, "needs investigation"
 exclude :test_output_string_encoding, "needs investigation"
-exclude :test_raise_with_cause, "needs investigation"
 exclude :test_redefined_backtrace, "needs investigation"
 exclude :test_stackoverflow, "expects Ruby SystemStackError, but we only propagate java.lang.StackOverflowError"
 exclude :test_syntax_error_detailed_message, "probably relates to prism parser syntax error output"

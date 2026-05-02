@@ -1695,13 +1695,17 @@ public class RubyKernel {
                 i = 1;
             }
 
-            RubyString buffer = newEmptyString(context);
-            buffer.setMetaClass(context.runtime.getWarnings().getWarningBuffer());
-            for (; i < argMessagesLen; i++) {
-                RubyIO.puts1(context, buffer, args[i]);
+            if (argMessagesLen - i > 0) {
+                RubyString buffer = newEmptyString(context);
+                buffer.setMetaClass(context.runtime.getWarnings().getWarningBuffer());
+
+                IRubyObject[] newArgs = (argMessagesLen == args.length && i == 0) ? args : Arrays.copyOfRange(args, i, argMessagesLen);
+                RubyIO.puts(context, buffer, newArgs);
+
+                buffer.setMetaClass(context.runtime.getString());
+
+                warnObj(context, recv, buffer, category);
             }
-            buffer.setMetaClass(context.runtime.getString());
-            warnObj(context, recv, buffer, category);
         }
 
         return context.nil;

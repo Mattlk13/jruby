@@ -1697,9 +1697,13 @@ public class RubyKernel {
                 i = 1;
             }
 
+            RubyString buffer = newEmptyString(context);
+            buffer.setMetaClass(context.runtime.getWarnings().getWarningBuffer());
             for (; i < argMessagesLen; i++) {
-                warnObj(context, recv, args[i], category);
+                RubyIO.puts1(context, buffer, args[i]);
             }
+            buffer.setMetaClass(context.runtime.getString());
+            warnObj(context, recv, buffer, category);
         }
 
         return context.nil;

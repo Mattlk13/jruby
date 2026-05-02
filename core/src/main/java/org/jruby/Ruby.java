@@ -502,6 +502,8 @@ public final class Ruby implements Constantizable {
 
         warningCategories = config.getWarningCategories();
         warningModule = RubyWarnings.createWarningModule(context);
+        warningBufferClass = RubyWarnings.createWarningBufferClass(context, warningModule);
+        warnings = new RubyWarnings(this, warningBufferClass);
 
         // Initialize exceptions
         initExceptions(context);
@@ -5295,6 +5297,7 @@ public final class Ruby implements Constantizable {
     private final RubyClass sizedQueueClass;
     private final RubyClass dataClass;
     private final RubyClass setClass;
+    private final RubyClass warningBufferClass;
 
     private RubyClass tmsStruct;
     private RubyClass passwdStruct;
@@ -5445,7 +5448,7 @@ public final class Ruby implements Constantizable {
     private final EncodingService encodingService;
 
     private final GlobalVariables globalVariables = new GlobalVariables(this);
-    private final RubyWarnings warnings = new RubyWarnings(this);
+    private final RubyWarnings warnings;
     private final WarnCallback regexpWarnings = message -> getWarnings().warn(message);
 
     /**
